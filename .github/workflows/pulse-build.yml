@@ -1,0 +1,67 @@
+name: Build Pulse
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Base que quieres compilar
+        type: choice
+        options: [packaged, latest-stable]
+        default: packaged
+permissions:
+  contents: read
+concurrency:
+  group: pulse-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Comprobar integración de Pulse
+        run: python -m unittest discover -s tests -v
+      - name: Preparar última versión estable
+        if: inputs.source == 'latest-stable'
+        run: python tools/prepare_upstream.py
+      - uses: android-actions/setup-android@v3
+      - name: Instalar SDK de compilación
+        run: |
+          python - <<'PY'
+          import pathlib, re, subprocess
+          text = pathlib.Path('android/app/build.gradle.kts').read_text()
+          sdk = re.search(r'compileSdk\s*=\s*(\d+)', text).group(1)
+          subprocess.run(['sdkmanager', '--licenses'], input='y\n' * 150, text=True, check=True, stdout=subprocess.DEVNULL)
+          subprocess.run(['sdkmanager', f'platforms;android-{sdk}', 'build-tools;36.0.0', 'platform-tools'], check=True)
+          PY
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Recuperar firma permanente
+        env:
+          PULSE_KEYSTORE: ${{ secrets.PULSE_KEYSTORE }}
+          PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
+        run: python tools/restore_ci_signing.py
+      - name: Compilar, comprobar y firmar
+        run: python tools/build.py
+      - name: Adjuntar fuente exacta de la compilación
+        run: |
+          python - <<'PY'
+          import pathlib, zipfile
+          root = pathlib.Path('.')
+          with zipfile.ZipFile('dist/Pulse-Music-source.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if not p.is_file() or any(x in {'.private', '.git', '.gradle', '.kotlin', 'build', 'dist', 'android.previous', '__pycache__'} for x in p.parts): continue
+              if p.name in {'local.properties', '.DS_Store'}: continue
+              z.write(p, p.as_posix())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-Music
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error

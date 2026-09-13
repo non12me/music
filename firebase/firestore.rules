@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/backups/{device} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(['generation', 'count', 'sha256', 'timestamp', 'label', 'size', 'format'])
+        && request.resource.data.generation is string && request.resource.data.generation.size() == 36
+        && request.resource.data.count is int && request.resource.data.count >= 1 && request.resource.data.count <= 84
+        && request.resource.data.size is int && request.resource.data.size > 0 && request.resource.data.size <= 33554432
+        && request.resource.data.sha256 is string && request.resource.data.sha256.size() == 64
+        && request.resource.data.timestamp is int
+        && request.resource.data.label is string && request.resource.data.label.size() <= 250
+        && request.resource.data.format == 1;
+      match /chunks/{chunk} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && request.resource.data.keys().hasOnly(['data', 'created'])
+          && request.resource.data.data is string && request.resource.data.data.size() <= 534000
+          && request.resource.data.created is int;
+      }
+    }
+  }
+}

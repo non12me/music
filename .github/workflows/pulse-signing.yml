@@ -1,0 +1,37 @@
+name: Setup signing (una sola vez)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Evitar cambiar una firma existente
+        env:
+          EXISTING_KEY: ${{ secrets.PULSE_KEYSTORE }}
+        run: |
+          python - <<'PY'
+          import os
+          if os.environ.get('EXISTING_KEY'):
+            raise SystemExit('Ya existe una firma. Usa Build Pulse. No regeneres la clave.')
+          PY
+      - run: python tools/setup_signing.py
+      - name: Empaquetar recuperación privada
+        run: |
+          python - <<'PY'
+          import pathlib, zipfile
+          with zipfile.ZipFile('Pulse-firma-privada.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+            for p in pathlib.Path('.private').iterdir(): z.write(p, p.name)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-firma-privada
+          path: Pulse-firma-privada.zip
+          retention-days: 1

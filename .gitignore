@@ -1,0 +1,12 @@
+.private/
+dist/
+android.previous/
+android/.gradle/
+android/.kotlin/
+**/build/
+**/local.properties
+**/__pycache__/
+*.jks
+*.keystore
+Pulse-firma-privada.zip
+/Pulse-Music-source.zip
